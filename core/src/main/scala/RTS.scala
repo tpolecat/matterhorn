@@ -75,10 +75,10 @@ object RTS {
     case class Map(f: Val => Val) extends Exp
     case class Bind(f: Val => Thunk) extends Exp
     case class Apply(f: (Val, Val) => Val, left: Thunk, right: Thunk) extends Exp
+
     case class Fork(f: Unit => Thunk) extends Exp
     case class Wait(t: ThreadId) extends Exp
 
-    case class  CatchOn(f: Exception => Option[Thunk]) extends Exp
-    case object CatchOff extends Exp
+    case class Catch(f: Exception => Option[Thunk], on: Thunk) extends Exp
   }
 }

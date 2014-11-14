@@ -26,7 +26,7 @@ object Interpreter {
     var value: Val = value0
     var stack: List[Frame] = stack0
     var next: Option[Continuation] = None
-    var handlers: List[Exception => Option[Thunk]] = Nil
+    var handlers: List[(Exception => Option[Thunk], Thunk)] = Nil
 
     var done: Boolean = false
 
@@ -82,8 +82,8 @@ object Interpreter {
               pushC(future.map(x => (_: Val) => x))
             }
 
-          case CatchOn(f) =>
-            handlers = f :: handlers
+          case Catch(f, on) =>
+            handlers = (f, thunk.tail) :: handlers
             stepThunk
 
           case CatchOff   =>
