@@ -56,6 +56,12 @@ object RTS {
     def fork[A](io: IO[A]): Thunk =
       Fork(_ => io.thunk) :: Nil
 
+    def catching[A, E <: Exception](io: IO[A])(f: E => IO[A])(implicit E: scala.reflect.ClassTag[E]): Thunk =
+      (CatchOff :: io.thunk) :+ CatchOn {
+        case e: E => Some(f(e).thunk)
+        case _ => None
+      }
+
     def fromFuture[A](future: Future[A]): Thunk =
       Wait(ThreadId(castF[Future](future), Interruptor.unintr)) :: Nil
   }
@@ -67,9 +73,12 @@ object RTS {
 
     case class Point(f: Unit => Val) extends Exp
     case class Map(f: Val => Val) extends Exp
-    case class Bind(f: Val => List[Exp]) extends Exp
-    case class Apply(f: (Val, Val) => Val, left: List[Exp], right: List[Exp]) extends Exp
-    case class Fork(f: Unit => List[Exp]) extends Exp
+    case class Bind(f: Val => Thunk) extends Exp
+    case class Apply(f: (Val, Val) => Val, left: Thunk, right: Thunk) extends Exp
+    case class Fork(f: Unit => Thunk) extends Exp
     case class Wait(t: ThreadId) extends Exp
+
+    case class  CatchOn(f: Exception => Option[Thunk]) extends Exp
+    case object CatchOff extends Exp
   }
 }

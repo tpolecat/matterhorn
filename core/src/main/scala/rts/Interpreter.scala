@@ -26,6 +26,7 @@ object Interpreter {
     var value: Val = value0
     var stack: List[Frame] = stack0
     var next: Option[Continuation] = None
+    var handlers: List[Exception => Option[Thunk]] = Nil
 
     var done: Boolean = false
 
@@ -37,51 +38,67 @@ object Interpreter {
       def setVal(x: Val): Unit = {
         done = thunkEmpty
         value = x
-        if (!thunkEmpty) thunk = thunk.tail
+        stepThunk
       }
 
-      def pushC(x: Continuation): Unit = {
-        stack = Right(x) :: stack
-      }
-
-      def pushT: Unit =
-        if (!thunkEmpty) stack = Left(thunk.tail) :: stack
+      def stepThunk: Unit = if (!thunkEmpty) thunk = thunk.tail
+      def pushC(x: Continuation): Unit = stack = Right(x) :: stack
+      def pushT: Unit = if (!thunkEmpty) stack = Left(thunk.tail) :: stack
 
       val tail = if (thunk.tail.nonEmpty) Some(thunk.tail) else None
 
-      thunk.head match {
-        case Point(f) => setVal(f(()))
-        case Map(f)   => setVal(f(value))
+      try {
+        thunk.head match {
+          case Point(f) => setVal(f(()))
+          case Map(f)   => setVal(f(value))
 
-        case Fork(f)  => setVal {
-          val intrChild = intr.newChild
-          def run = unsafePerformEval_(f(()).reverse, unit, Nil, intrChild)
-          cast(ThreadId(Future(run).flatMap(identity), intrChild))
-        }
-
-        case Bind(f) =>
-          pushT
-          thunk = f(value).reverse
-
-        case Apply(f, left, right) =>
-          pushT
-          thunk = left.reverse
-          pushC(
-            Future(unsafePerformEval_(right.reverse, unit, Nil, intr))
-              .flatMap(_.map(r => ((l: Val) => f(l, r))))
-          )
-
-        case Wait(ThreadId(future, tintr)) =>
-          done = true
-          if (tintr.interrupted) {
-            stack = Nil
-            thunk = Nil
-            next = Some(Future(die))
-          } else {
-            pushT
-            thunk = Nil
-            pushC(future.map(x => (_: Val) => x))
+          case Fork(f)  => setVal {
+            val intrChild = intr.newChild
+            def run = unsafePerformEval_(f(()).reverse, unit, Nil, intrChild)
+            cast(ThreadId(Future(run).flatMap(identity), intrChild))
           }
+
+          case Bind(f) =>
+            pushT
+            thunk = f(value).reverse
+
+          case Apply(f, left, right) =>
+            pushT
+            thunk = left.reverse
+            pushC(
+              Future(unsafePerformEval_(right.reverse, unit, Nil, intr))
+                .flatMap(_.map(r => ((l: Val) => f(l, r))))
+            )
+
+          case Wait(ThreadId(future, tintr)) =>
+            done = true
+            if (tintr.interrupted) {
+              stack = Nil
+              thunk = Nil
+              next = Some(Future(die))
+            } else {
+              pushT
+              thunk = Nil
+              pushC(future.map(x => (_: Val) => x))
+            }
+
+          case CatchOn(f) =>
+            handlers = f :: handlers
+            stepThunk
+
+          case CatchOff   =>
+            handlers = handlers.tail
+            stepThunk
+        }
+      } catch {
+        case e: Exception => handlers.foldRight(None: Option[Thunk])((f, res) => res.orElse(f(e))) match {
+          case Some(recovery) =>
+            done = false
+            stack = Nil
+            value = cast(e)
+            thunk = recovery
+          case None => throw e
+        }
       }
 
       // TODO Performance analysis of the volatile in the intr
