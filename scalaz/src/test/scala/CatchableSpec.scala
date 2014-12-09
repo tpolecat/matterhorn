@@ -1,14 +1,12 @@
 package matterhorn
 
 import org.scalatest.FunSpec
-import org.scalatest.concurrent.ScalaFutures
-import org.scalactic.TypeCheckedTripleEquals
 
-import scalaz._
+import scalaz.{ Catchable, -\/, \/- }
 import IO._
 import RTS.defaultRTS.unsafePerformIO_
 
-class CatchableSpec extends FunSpec with TypeCheckedTripleEquals with ScalaFutures {
+class CatchableSpec extends FunSpec {
   import TestUtils._
 
   describe("Catchable[IO]") {
@@ -24,7 +22,7 @@ class CatchableSpec extends FunSpec with TypeCheckedTripleEquals with ScalaFutur
         unsafePerformIO_(bad)
         fail("should have thrown")
       } catch {
-        case t: Throwable => assert(t === err)
+        case t: Throwable => assert(t == err)
       }
     }
 
